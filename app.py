@@ -45,7 +45,8 @@ if not api_key:
 
 # 🧪 Тест ключа
 if st.button("🧪 Проверить API ключ"):
-    test_url = f"https://api.twelvedata.com/time_series?symbol=EURUSD&interval=1min&outputsize=1&apikey={api_key}"
+    test_url = f"https://api.twelvedata.com/time_series?symbol=EUR%2FUSD&interval=1min&outputsize=1&apikey={api_key}"
+    
     try:
         r = requests.get(test_url, timeout=10)
         data = r.json()
@@ -60,9 +61,10 @@ SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
 @st.cache_data(ttl=55)
 def get_data(sym, key):
-    url = f"https://api.twelvedata.com/time_series?symbol={sym}&interval=1min&outputsize=50&apikey={key}"
+     symbol_encoded = sym.replace("/", "%2F")
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}"
     try:
-        r = requests.get(url, timeout=15)
+        r = requests.get(url, timeout=15).                      
         if r.status_code != 200:
             return None, f"HTTP {r.status_code}"
         data = r.json()
