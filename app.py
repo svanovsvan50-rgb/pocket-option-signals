@@ -56,7 +56,7 @@ if st.button("🧪 Проверить API ключ"):
     except Exception as e:
         st.error(f"❌ Ошибка подключения: {e}")
 
-SYMBOLS = ["EURUSD", "GBPUSD", "USDRUB"]
+SYMBOLS = ["EURUSD", "GBPUSD", "USDRUB_OTC"]
 
 @st.cache_data(ttl=55)
 def get_data(sym, key):
