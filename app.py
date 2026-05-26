@@ -11,7 +11,16 @@ st.set_page_config(
     page_title="PO Signals", 
     page_icon="📊", 
     layout="wide", 
-    initial_sidebar_state="collapsed")
+    initial_sidebar_state="collapsed"
+)
+
+# Принудительно задаём имя ярлыка для Android/iOS
+st.markdown("""
+<meta name="application-name" content="PO Signals">
+<meta name="apple-mobile-web-app-title" content="PO Signals">
+<meta name="mobile-web-app-capable" content="yes">
+""", unsafe_allow_html=True)
+
 
 # 🔊 Звуковые сигналы + стили
 st.markdown("""
