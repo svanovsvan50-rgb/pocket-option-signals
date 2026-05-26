@@ -7,7 +7,11 @@ from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
 from datetime import datetime
 
-st.set_page_config(page_title="PO Signals 🔊", layout="wide", page_icon="📊")
+st.set_page_config(
+    page_title="PO Signals", 
+    page_icon="📊", 
+    layout="wide", 
+    initial_sidebar_state="collapsed")
 
 # 🔊 Звуковые сигналы + стили
 st.markdown("""
