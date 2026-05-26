@@ -46,7 +46,6 @@ if not api_key:
 # 🧪 Тест ключа
 if st.button("🧪 Проверить API ключ"):
     test_url = f"https://api.twelvedata.com/time_series?symbol=EUR%2FUSD&interval=1min&outputsize=1&apikey={api_key}"
-    
     try:
         r = requests.get(test_url, timeout=10)
         data = r.json()
@@ -57,14 +56,15 @@ if st.button("🧪 Проверить API ключ"):
     except Exception as e:
         st.error(f"❌ Ошибка подключения: {e}")
 
+# ⚙️ Настройки
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
 @st.cache_data(ttl=55)
 def get_data(sym, key):
-     symbol_encoded = sym.replace("/", "%2F")
+    symbol_encoded = sym.replace("/", "%2F")
     url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}"
     try:
-        r = requests.get(url, timeout=15).                      
+        r = requests.get(url, timeout=15)
         if r.status_code != 200:
             return None, f"HTTP {r.status_code}"
         data = r.json()
@@ -72,7 +72,6 @@ def get_data(sym, key):
             return None, data["message"]
         if "values" not in data or not data["values"]:
             return None, "Нет данных в ответе"
-        
         df = pd.DataFrame(data["values"])
         df = df.iloc[::-1].reset_index(drop=True)
         df["date"] = pd.to_datetime(df["datetime"])
@@ -118,10 +117,8 @@ for i, sym in enumerate(SYMBOLS):
         if err:
             st.markdown(f'<div class="error">❌ {sym}<br><small>{err}</small></div>', unsafe_allow_html=True)
             continue
-        
         sig_text, sig_class, price = analyze(df)
         price_str = f"{price:.5f}" if price else "N/A"
-        
         st.markdown(
             f'<div class="signal-box {sig_class}" data-sig="{sig_class}" data-sym="{sym}">'
             f'{sym}<br>{sig_text}<br>{price_str}'
