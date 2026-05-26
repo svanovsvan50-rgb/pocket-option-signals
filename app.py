@@ -51,23 +51,41 @@ st.markdown("""
 st.title("📊 PO Signals 1m 🔊")
 
 # 🔑 Ввод ключа
-api_key = st.text_input("🔑 Twelve Data API Key", type="password")
+# 🔑 Стабильная работа с API ключом
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = ''
+
+def save_key():
+    st.session_state.api_key = st.session_state.input_key.strip()
+    if st.session_state.api_key:
+        st.rerun()
+
+st.text_input("🔑 Twelve Data API Key", 
+              type="password", 
+              key="input_key",
+              value=st.session_state.api_key,
+              on_change=save_key,
+              placeholder="Введите ключ и нажмите Enter")
+
+api_key = st.session_state.api_key
+
 if not api_key:
-    st.warning("⚠️ Введите API ключ выше")
+    st.info("⏳ Введите API-ключ в поле выше и нажмите Enter. Он сохранится для этой сессии.")
     st.stop()
 
-# 🧪 Тест ключа
-if st.button("🧪 Проверить API ключ"):
-    test_url = f"https://api.twelvedata.com/time_series?symbol=EUR%2FUSD&interval=1min&outputsize=1&apikey={api_key}"
-    try:
-        r = requests.get(test_url, timeout=10)
-        data = r.json()
-        if "values" in data:
-            st.success("✅ Ключ работает! Данные получены.")
-        else:
-            st.error(f"❌ Ошибка: {data.get('message', 'Неизвестная ошибка')}")
-    except Exception as e:
-        st.error(f"❌ Ошибка подключения: {e}")
+# 🧪 Тест ключа (опционально, можно скрыть)
+if st.button("🧪 Проверить ключ", type="primary"):
+    with st.spinner("Проверка..."):
+        test_url = f"https://api.twelvedata.com/time_series?symbol=EUR%2FUSD&interval=1min&outputsize=1&apikey={api_key}"
+        try:
+            r = requests.get(test_url, timeout=10)
+            data = r.json()
+            if "values" in data:
+                st.success("✅ Ключ работает!")
+            else:
+                st.error(f"❌ {data.get('message', 'Ошибка')}")
+        except Exception as e:
+            st.error(f"❌ {e}")
 
 # ⚙️ Настройки
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
