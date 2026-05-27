@@ -90,10 +90,11 @@ if st.button("🧪 Проверить ключ", type="primary"):
 # ⚙️ Настройки
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
-@st.cache_data(ttl=55)
-def get_data(sym, key):
+@st.cache_data(ttl=60)
+def get_data(sym, key, minute):
     symbol_encoded = sym.replace("/", "%2F")
     url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}"
+    
     try:
         r = requests.get(url, timeout=15)
         if r.status_code != 200:
