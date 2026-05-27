@@ -51,28 +51,46 @@ st.markdown("""
 st.title("📊 PO Signals 1m 🔊")
 
 # 🔑 Ввод ключа
-# 🔑 Стабильная работа с API ключом
+# 🔑 Блок ввода и сохранения API ключа (ИСПРАВЛЕННЫЙ)
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ''
 
-def save_key():
-    st.session_state.api_key = st.session_state.input_key.strip()
-    if st.session_state.api_key:
-        st.rerun()
+# JavaScript: автозагрузка и сохранение ключа в браузере
+st.markdown("""
+<script>
+setTimeout(() => {
+    const input = document.querySelector('input[type="password"]');
+    if (!input) return;
+    
+    // 1. Автоподстановка при открытии
+    const saved = localStorage.getItem('po_api_key');
+    if (saved && saved.length > 5) {
+        input.value = saved;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    
+    // 2. Сохранение при каждом вводе
+    input.addEventListener('input', (e) => {
+        localStorage.setItem('po_api_key', e.target.value);
+    });
+}, 800);
+</script>
+""", unsafe_allow_html=True)
 
-st.text_input("st.markdown("<style>input[type='text'] { -webkit-text-security: disc; }</style>", unsafe_allow_html=True)", 
-              type="text", 
-              key="input_key",
-              value=st.session_state.api_key,
-              on_change=save_key,
-              placeholder="Введите ключ и нажмите Enter")
+api_key = st.text_input("🔑 Twelve Data API Key", type="password", key="auth_key_field")
 
-api_key = st.session_state.api_key
+# Фиксация ключа в сессии Streamlit
+if api_key and api_key != st.session_state.api_key:
+    st.session_state.api_key = api_key
+    st.rerun()
 
-if not api_key:
-    st.info("⏳ Введите API-ключ в поле выше и нажмите Enter. Он сохранится для этой сессии.")
+# Если ключа нет — останавливаем рендер графиков
+if not st.session_state.api_key:
+    st.info("💡 Введите ключ один раз → нажмите Enter. Браузер запомнит его навсегда.")
     st.stop()
 
+# Используем сохранённый ключ
+api_key = st.session_state.api_key
 # 🧪 Тест ключа (опционально, можно скрыть)
 if st.button("🧪 Проверить ключ", type="primary"):
     with st.spinner("Проверка..."):
