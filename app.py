@@ -138,18 +138,25 @@ def chart(df, sym):
     fig.update_layout(height=420, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
     return fig
 
-# 📊 Основной блок
+# 📊 Основной блок с гарантированным обновлением
 st.markdown(f"🕒 Обновлено: {datetime.now().strftime('%H:%M:%S')}")
 cols = st.columns(3)
 
+# Получаем текущую минуту для принудительного сброса кэша
+import time
+current_minute = int(time.time() // 60)
+
 for i, sym in enumerate(SYMBOLS):
     with cols[i]:
-        df, err = get_data(sym, api_key)
+        # Передаём current_minute, чтобы кэш обновлялся каждую минуту
+        df, err = get_data(sym, api_key, current_minute)
         if err:
             st.markdown(f'<div class="error">❌ {sym}<br><small>{err}</small></div>', unsafe_allow_html=True)
             continue
+        
         sig_text, sig_class, price = analyze(df)
         price_str = f"{price:.5f}" if price else "N/A"
+        
         st.markdown(
             f'<div class="signal-box {sig_class}" data-sig="{sig_class}" data-sym="{sym}">'
             f'{sym}<br>{sig_text}<br>{price_str}'
@@ -165,5 +172,23 @@ st.caption("""
 • ⚠️ Тестируйте на ДЕМО-счёте минимум 100 сделок перед реальными деньгами
 """)
 
-# 🔁 Автообновление страницы
-st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
+# 🔄 Гарантированное обновление страницы (работает в Android PWA)
+st.markdown("""
+<script>
+(function() {
+    let timeLeft = 55;
+    const timer = document.createElement('div');
+    timer.style.cssText = 'position:fixed;bottom:10px;right:10px;background:#1e1e1e;color:#00ff00;padding:6px 10px;border-radius:8px;font-size:12px;z-index:9999;';
+    document.body.appendChild(timer);
+    
+    const interval = setInterval(() => {
+        timeLeft--;
+        timer.textContent = `🔄 Обновление: ${timeLeft}с`;
+        if (timeLeft <= 0) {
+            clearInterval(interval);
+            window.location.reload();
+        }
+    }, 1000);
+})();
+</script>
+""", unsafe_allow_html=True)
