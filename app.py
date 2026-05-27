@@ -60,8 +60,8 @@ def save_key():
     if st.session_state.api_key:
         st.rerun()
 
-st.text_input("🔑 Twelve Data API Key", 
-              type="password", 
+st.text_input("st.markdown("<style>input[type='text'] { -webkit-text-security: disc; }</style>", unsafe_allow_html=True)", 
+              type="text", 
               key="input_key",
               value=st.session_state.api_key,
               on_change=save_key,
