@@ -9,29 +9,24 @@ import time
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
-# 🔁 Принудительное обновление каждые 60 сек (работает в PWA)
-st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
-
 st.title("📊 PO Signals 1m 🔊")
 
-# 🔑 Стабильное хранение ключа в сессии
+# 🔑 Хранение ключа в сессии
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ''
 
-# Поле ввода (Chrome сам предложит сохранить пароль)
 new_key = st.text_input("🔑 Twelve Data API Key", type="password", value=st.session_state.api_key)
 if new_key and new_key != st.session_state.api_key:
     st.session_state.api_key = new_key
     st.rerun()
 
 if not st.session_state.api_key:
-    st.info("💡 Введите ключ → нажмите Enter. Chrome предложит сохранить его навсегда.")
+    st.info("💡 Введите ключ → нажмите Enter. Chrome предложит сохранить его.")
     st.stop()
 
 api_key = st.session_state.api_key
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
-# 📊 Загрузка данных (кэш сбрасывается при каждом обновлении страницы)
 @st.cache_data(ttl=30)
 def get_data(sym, key, ts):
     symbol_encoded = sym.replace("/", "%2F")
@@ -70,28 +65,9 @@ def chart(df, sym):
     fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
     return fig
 
-# 🔊 Звуковой сигнал (надёжный вариант)
-st.markdown("""
-<script>
-let lastSigs = {};
-const sound = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-setInterval(() => {
-    document.querySelectorAll('[data-sig]').forEach(el => {
-        const s = el.dataset.sym, v = el.dataset.sig;
-        if (lastSigs[s] !== v && v !== 'HOLD') {
-            sound.play().catch(()=>{});
-            lastSigs[s] = v;
-        }
-    });
-}, 2000);
-</script>
-""", unsafe_allow_html=True)
-
-# 🖥️ Основной интерфейс
-st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')} | ⏱️ Автообновление: 60 сек")
+# 🖥️ Отрисовка интерфейса
+st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')}")
 cols = st.columns(3)
-
-# Метка времени для сброса кэша при каждом обновлении
 cache_ts = int(time.time() // 60)
 
 for i, sym in enumerate(SYMBOLS):
@@ -103,8 +79,8 @@ for i, sym in enumerate(SYMBOLS):
             
         sig_text, sig_class, price = analyze(df)
         price_str = f"{price:.5f}" if price else "N/A"
-        
         bg = "#00c853" if sig_class == "call" else "#ff1744" if sig_class == "put" else "#757575"
+        
         st.markdown(
             f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
             f'{sym}<br>{sig_text}<br>{price_str}'
@@ -113,4 +89,43 @@ for i, sym in enumerate(SYMBOLS):
         )
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
-st.caption("🔊 Включите звук на телефоне. Торгуйте на ДЕМО. Риск ≤1% на сделку.")
+# 🔊 Звук + ⏱️ Таймер автообновления (работает в PWA)
+st.markdown("""
+<script>
+(function() {
+    // 1. Обратный отсчёт и принудительное обновление
+    let t = 55;
+    const box = document.createElement('div');
+    box.id = 'po-timer';
+    box.style.cssText = 'position:fixed;bottom:15px;right:15px;background:#111;color:#0f0;padding:10px 14px;border-radius:10px;font-weight:bold;font-size:14px;z-index:9999;border:1px solid #333;';
+    document.body.appendChild(box);
+    
+    const tick = setInterval(() => {
+        t--;
+        box.textContent = `🔄 ${t}с`;
+        if (t <= 0) {
+            clearInterval(tick);
+            box.textContent = '🔄 Обновляю...';
+            setTimeout(() => window.location.reload(), 500);
+        }
+    }, 1000);
+    box.textContent = `🔄 ${t}с`;
+
+    // 2. Проверка сигналов и звук
+    let last = {};
+    const snd = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+    snd.volume = 0.6;
+    setInterval(() => {
+        document.querySelectorAll('[data-sig]').forEach(el => {
+            const s = el.dataset.sym, v = el.dataset.sig;
+            if (last[s] !== v && v !== 'HOLD') {
+                snd.play().catch(()=>{});
+                last[s] = v;
+            }
+        });
+    }, 1500);
+})();
+</script>
+""", unsafe_allow_html=True)
+
+st.caption("🔊 Включите звук. Торгуйте на ДЕМО. Риск ≤1% на сделку.")
