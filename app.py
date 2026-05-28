@@ -25,7 +25,7 @@ if not st.session_state.api_key:
     st.stop()
 
 api_key = st.session_state.api_key
-SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
+SYMBOLS = ["EUR/USD", "GBP/USD"]
 
 @st.cache_data(ttl=30)
 def get_data(sym, key, ts):
