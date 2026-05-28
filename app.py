@@ -1,4 +1,6 @@
+            
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import requests
 import pandas as pd
 import plotly.graph_objects as go
@@ -9,7 +11,10 @@ import time
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("📊 PO Signals 1m 🔊")
+# ⚡ Стабильное автообновление каждые 55 секунд (работает в Cloud)
+st_autorefresh(interval=55000, limit=None, key="po_auto_refresh")
+
+st.title("📊 PO Signals 1m")
 
 # 🔑 Хранение ключа в сессии
 if 'api_key' not in st.session_state:
@@ -25,7 +30,7 @@ if not st.session_state.api_key:
     st.stop()
 
 api_key = st.session_state.api_key
-SYMBOLS = ["EUR/USD", "GBP/USD"]
+SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
 @st.cache_data(ttl=30)
 def get_data(sym, key, ts):
@@ -65,8 +70,8 @@ def chart(df, sym):
     fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
     return fig
 
-# 🖥️ Отрисовка интерфейса
-st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')}")
+# 🖥️ Отрисовка
+st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')} | ⏱️ Автообновление каждые 55 сек")
 cols = st.columns(3)
 cache_ts = int(time.time() // 60)
 
@@ -82,50 +87,11 @@ for i, sym in enumerate(SYMBOLS):
         bg = "#00c853" if sig_class == "call" else "#ff1744" if sig_class == "put" else "#757575"
         
         st.markdown(
-            f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
+            f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;">'
             f'{sym}<br>{sig_text}<br>{price_str}'
             f'</div>',
             unsafe_allow_html=True
         )
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
-# 🔊 Звук + ⏱️ Таймер автообновления (работает в PWA)
-st.markdown("""
-<script>
-(function() {
-    // 1. Обратный отсчёт и принудительное обновление
-    let t = 55;
-    const box = document.createElement('div');
-    box.id = 'po-timer';
-    box.style.cssText = 'position:fixed;bottom:15px;right:15px;background:#111;color:#0f0;padding:10px 14px;border-radius:10px;font-weight:bold;font-size:14px;z-index:9999;border:1px solid #333;';
-    document.body.appendChild(box);
-    
-    const tick = setInterval(() => {
-        t--;
-        box.textContent = `🔄 ${t}с`;
-        if (t <= 0) {
-            clearInterval(tick);
-            box.textContent = '🔄 Обновляю...';
-            setTimeout(() => window.location.reload(), 500);
-        }
-    }, 1000);
-    box.textContent = `🔄 ${t}с`;
-
-    // 2. Проверка сигналов и звук
-    let last = {};
-    const snd = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-    snd.volume = 0.6;
-    setInterval(() => {
-        document.querySelectorAll('[data-sig]').forEach(el => {
-            const s = el.dataset.sym, v = el.dataset.sig;
-            if (last[s] !== v && v !== 'HOLD') {
-                snd.play().catch(()=>{});
-                last[s] = v;
-            }
-        });
-    }, 1500);
-})();
-</script>
-""", unsafe_allow_html=True)
-
-st.caption("🔊 Включите звук. Торгуйте на ДЕМО. Риск ≤1% на сделку.")
+st.caption("🔊 Включите звук в терминале PO. Торгуйте на ДЕМО. Риск ≤1% на сделку.")
