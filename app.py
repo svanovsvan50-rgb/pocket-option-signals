@@ -1,4 +1,3 @@
-            
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import requests
@@ -8,15 +7,15 @@ from plotly.subplots import make_subplots
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
 import time
+import random
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
-# ⚡ Стабильное автообновление каждые 55 секунд (работает в Cloud)
-st_autorefresh(interval=55000, limit=None, key="po_auto_refresh")
+# ⚡ Автообновление каждые 55 секунд (серверный механизм)
+st_autorefresh(interval=55000, limit=None, key="po_refresh")
 
 st.title("📊 PO Signals 1m")
 
-# 🔑 Хранение ключа в сессии
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ''
 
@@ -32,12 +31,12 @@ if not st.session_state.api_key:
 api_key = st.session_state.api_key
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
-@st.cache_data(ttl=30)
-def get_data(sym, key, ts):
+# 🌐 Загрузка БЕЗ кэша (добавлен случайный параметр для обхода браузерного кэша)
+def get_data(sym, key):
     symbol_encoded = sym.replace("/", "%2F")
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}&_nocache={random.randint(1000,9999)}"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=15)
         data = r.json()
         if "values" not in data:
             return None, data.get("message", "Ошибка API")
@@ -50,7 +49,8 @@ def get_data(sym, key, ts):
         return None, str(e)
 
 def analyze(df):
-    if len(df) < 20: return "⏳ WAIT", "hold", None
+    if len(df) < 20:
+        return "⏳ WAIT", "hold", None
     df["ema9"] = EMAIndicator(close=df["close"], window=9).ema_indicator()
     df["rsi14"] = RSIIndicator(close=df["close"], window=14).rsi()
     curr, prev = df.iloc[-1], df.iloc[-2]
@@ -70,14 +70,33 @@ def chart(df, sym):
     fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
     return fig
 
-# 🖥️ Отрисовка
-st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')} | ⏱️ Автообновление каждые 55 сек")
+# 🔊 Звук при смене сигнала (сравнивает с localStorage)
+st.markdown("""
+<script>
+(function(){
+    let last = JSON.parse(localStorage.getItem('po_sigs') || '{}');
+    let changed = false;
+    document.querySelectorAll('[data-sig]').forEach(el => {
+        let s = el.dataset.sym, v = el.dataset.sig;
+        if(last[s] && last[s] !== v && v !== 'HOLD') changed = true;
+        last[s] = v;
+    });
+    if(changed){
+        let snd = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+        snd.volume = 0.5; snd.play().catch(()=>{});
+    }
+    localStorage.setItem('po_sigs', JSON.stringify(last));
+})();
+</script>
+""", unsafe_allow_html=True)
+
+# 🖥️ Интерфейс
+st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')} | 🔄 Автообновление каждые ~55 сек")
 cols = st.columns(3)
-cache_ts = int(time.time() // 60)
 
 for i, sym in enumerate(SYMBOLS):
     with cols[i]:
-        df, err = get_data(sym, api_key, cache_ts)
+        df, err = get_data(sym, api_key)
         if err:
             st.error(f"❌ {sym}: {err}")
             continue
@@ -87,11 +106,11 @@ for i, sym in enumerate(SYMBOLS):
         bg = "#00c853" if sig_class == "call" else "#ff1744" if sig_class == "put" else "#757575"
         
         st.markdown(
-            f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;">'
+            f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
             f'{sym}<br>{sig_text}<br>{price_str}'
             f'</div>',
             unsafe_allow_html=True
         )
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
-st.caption("🔊 Включите звук в терминале PO. Торгуйте на ДЕМО. Риск ≤1% на сделку.")
+st.caption("🔊 Звук сработает только при смене CALL/PUT. Торгуйте на ДЕМО.")
