@@ -5,139 +5,52 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
-from datetime import datetime
+import time
 
-st.set_page_config(
-    page_title="PO Signals", 
-    page_icon="📊", 
-    layout="wide", 
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
-# Принудительно задаём имя ярлыка для Android/iOS
-st.markdown("""
-<meta name="application-name" content="PO Signals">
-<meta name="apple-mobile-web-app-title" content="PO Signals">
-<meta name="mobile-web-app-capable" content="yes">
-""", unsafe_allow_html=True)
-
-
-# 🔊 Звуковые сигналы + стили
-st.markdown("""
-<style>
-    .signal-box { padding: 15px; border-radius: 12px; text-align: center; font-weight: bold; margin: 8px 0; }
-    .call { background: linear-gradient(135deg, #00c853, #69f0ae); color: #000; }
-    .put { background: linear-gradient(135deg, #ff1744, #ff5252); color: #fff; }
-    .hold { background: linear-gradient(135deg, #757575, #bdbdbd); color: #fff; }
-    .error { background: #ffebee; color: #c62828; padding: 10px; border-radius: 8px; margin: 10px 0; }
-</style>
-<script>
-    const callSound = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-    const putSound = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-    let last = {};
-    function check() {
-        document.querySelectorAll('[data-sig]').forEach(el => {
-            const sym = el.dataset.sym, sig = el.dataset.sig;
-            if (last[sym] !== sig && sig !== 'HOLD') {
-                (sig === 'CALL' ? callSound : putSound).play().catch(()=>{});
-                last[sym] = sig;
-            }
-        });
-    }
-    setInterval(check, 2000);
-</script>
-""", unsafe_allow_html=True)
+# 🔁 Принудительное обновление каждые 60 сек (работает в PWA)
+st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
 
 st.title("📊 PO Signals 1m 🔊")
 
-# 🔑 Ввод ключа
-# 🔑 Блок ввода и сохранения API ключа (ИСПРАВЛЕННЫЙ)
+# 🔑 Стабильное хранение ключа в сессии
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ''
 
-# JavaScript: автозагрузка и сохранение ключа в браузере
-st.markdown("""
-<script>
-setTimeout(() => {
-    const input = document.querySelector('input[type="password"]');
-    if (!input) return;
-    
-    // 1. Автоподстановка при открытии
-    const saved = localStorage.getItem('po_api_key');
-    if (saved && saved.length > 5) {
-        input.value = saved;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    
-    // 2. Сохранение при каждом вводе
-    input.addEventListener('input', (e) => {
-        localStorage.setItem('po_api_key', e.target.value);
-    });
-}, 800);
-</script>
-""", unsafe_allow_html=True)
-
-api_key = st.text_input("🔑 Twelve Data API Key", type="password", key="auth_key_field")
-
-# Фиксация ключа в сессии Streamlit
-if api_key and api_key != st.session_state.api_key:
-    st.session_state.api_key = api_key
+# Поле ввода (Chrome сам предложит сохранить пароль)
+new_key = st.text_input("🔑 Twelve Data API Key", type="password", value=st.session_state.api_key)
+if new_key and new_key != st.session_state.api_key:
+    st.session_state.api_key = new_key
     st.rerun()
 
-# Если ключа нет — останавливаем рендер графиков
 if not st.session_state.api_key:
-    st.info("💡 Введите ключ один раз → нажмите Enter. Браузер запомнит его навсегда.")
+    st.info("💡 Введите ключ → нажмите Enter. Chrome предложит сохранить его навсегда.")
     st.stop()
 
-# Используем сохранённый ключ
 api_key = st.session_state.api_key
-# 🧪 Тест ключа (опционально, можно скрыть)
-if st.button("🧪 Проверить ключ", type="primary"):
-    with st.spinner("Проверка..."):
-        test_url = f"https://api.twelvedata.com/time_series?symbol=EUR%2FUSD&interval=1min&outputsize=1&apikey={api_key}"
-        try:
-            r = requests.get(test_url, timeout=10)
-            data = r.json()
-            if "values" in data:
-                st.success("✅ Ключ работает!")
-            else:
-                st.error(f"❌ {data.get('message', 'Ошибка')}")
-        except Exception as e:
-            st.error(f"❌ {e}")
-
-# ⚙️ Настройки
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
-@st.cache_data(ttl=60)
-def get_data(sym, key, minute):
+# 📊 Загрузка данных (кэш сбрасывается при каждом обновлении страницы)
+@st.cache_data(ttl=30)
+def get_data(sym, key, ts):
     symbol_encoded = sym.replace("/", "%2F")
     url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}"
-    
     try:
-        r = requests.get(url, timeout=15)
-        if r.status_code != 200:
-            return None, f"HTTP {r.status_code}"
+        r = requests.get(url, timeout=10)
         data = r.json()
-        if "message" in data:
-            return None, data["message"]
-        if "values" not in data or not data["values"]:
-            return None, "Нет данных в ответе"
-        df = pd.DataFrame(data["values"])
-        df = df.iloc[::-1].reset_index(drop=True)
+        if "values" not in data:
+            return None, data.get("message", "Ошибка API")
+        df = pd.DataFrame(data["values"]).iloc[::-1].reset_index(drop=True)
         df["date"] = pd.to_datetime(df["datetime"])
         for c in ["open", "high", "low", "close"]:
             df[c] = pd.to_numeric(df[c], errors="coerce")
-        if df["close"].isna().any():
-            return None, "Ошибка парсинга цен"
         return df, None
-    except requests.Timeout:
-        return None, "Тайм-аут (попробуйте позже)"
     except Exception as e:
         return None, str(e)
 
 def analyze(df):
-    if len(df) < 20:
-        return "⏳ WAIT", "hold", None
+    if len(df) < 20: return "⏳ WAIT", "hold", None
     df["ema9"] = EMAIndicator(close=df["close"], window=9).ema_indicator()
     df["rsi14"] = RSIIndicator(close=df["close"], window=14).rsi()
     curr, prev = df.iloc[-1], df.iloc[-2]
@@ -154,60 +67,50 @@ def chart(df, sym):
     fig.add_trace(go.Scatter(x=df["date"], y=df["rsi14"], line=dict(color="purple")), row=2, col=1)
     fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
-    fig.update_layout(height=420, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
+    fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
     return fig
 
-# 📊 Основной блок с гарантированным обновлением
-st.markdown(f"🕒 Обновлено: {datetime.now().strftime('%H:%M:%S')}")
+# 🔊 Звуковой сигнал (надёжный вариант)
+st.markdown("""
+<script>
+let lastSigs = {};
+const sound = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+setInterval(() => {
+    document.querySelectorAll('[data-sig]').forEach(el => {
+        const s = el.dataset.sym, v = el.dataset.sig;
+        if (lastSigs[s] !== v && v !== 'HOLD') {
+            sound.play().catch(()=>{});
+            lastSigs[s] = v;
+        }
+    });
+}, 2000);
+</script>
+""", unsafe_allow_html=True)
+
+# 🖥️ Основной интерфейс
+st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')} | ⏱️ Автообновление: 60 сек")
 cols = st.columns(3)
 
-# Получаем текущую минуту для принудительного сброса кэша
-import time
-current_minute = int(time.time() // 60)
+# Метка времени для сброса кэша при каждом обновлении
+cache_ts = int(time.time() // 60)
 
 for i, sym in enumerate(SYMBOLS):
     with cols[i]:
-        # Передаём current_minute, чтобы кэш обновлялся каждую минуту
-        df, err = get_data(sym, api_key, current_minute)
+        df, err = get_data(sym, api_key, cache_ts)
         if err:
-            st.markdown(f'<div class="error">❌ {sym}<br><small>{err}</small></div>', unsafe_allow_html=True)
+            st.error(f"❌ {sym}: {err}")
             continue
-        
+            
         sig_text, sig_class, price = analyze(df)
         price_str = f"{price:.5f}" if price else "N/A"
         
+        bg = "#00c853" if sig_class == "call" else "#ff1744" if sig_class == "put" else "#757575"
         st.markdown(
-            f'<div class="signal-box {sig_class}" data-sig="{sig_class}" data-sym="{sym}">'
+            f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
             f'{sym}<br>{sig_text}<br>{price_str}'
             f'</div>',
             unsafe_allow_html=True
         )
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
-st.caption("""
-**Как использовать:**
-• 🟢 CALL → сделка ВВЕРХ на 1 мин | 🔴 PUT → ВНИЗ | ⚪ HOLD → ждать
-• 🔊 Звук при смене сигнала (включите звук на телефоне)
-• ⚠️ Тестируйте на ДЕМО-счёте минимум 100 сделок перед реальными деньгами
-""")
-
-# 🔄 Гарантированное обновление страницы (работает в Android PWA)
-st.markdown("""
-<script>
-(function() {
-    let timeLeft = 55;
-    const timer = document.createElement('div');
-    timer.style.cssText = 'position:fixed;bottom:10px;right:10px;background:#1e1e1e;color:#00ff00;padding:6px 10px;border-radius:8px;font-size:12px;z-index:9999;';
-    document.body.appendChild(timer);
-    
-    const interval = setInterval(() => {
-        timeLeft--;
-        timer.textContent = `🔄 Обновление: ${timeLeft}с`;
-        if (timeLeft <= 0) {
-            clearInterval(interval);
-            window.location.reload();
-        }
-    }, 1000);
-})();
-</script>
-""", unsafe_allow_html=True)
+st.caption("🔊 Включите звук на телефоне. Торгуйте на ДЕМО. Риск ≤1% на сделку.")
