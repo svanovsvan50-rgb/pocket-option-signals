@@ -6,12 +6,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
-import time
+import datetime
 import random
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
-# ⚡ Автообновление каждые 55 секунд (серверный механизм)
+# ⚡ Автообновление каждые 55 секунд
 st_autorefresh(interval=55000, limit=None, key="po_refresh")
 
 st.title("📊 PO Signals 1m")
@@ -31,10 +31,9 @@ if not st.session_state.api_key:
 api_key = st.session_state.api_key
 SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
-# 🌐 Загрузка БЕЗ кэша (добавлен случайный параметр для обхода браузерного кэша)
 def get_data(sym, key):
     symbol_encoded = sym.replace("/", "%2F")
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}&_nocache={random.randint(1000,9999)}"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}&_={random.randint(1000,9999)}"
     try:
         r = requests.get(url, timeout=15)
         data = r.json()
@@ -70,7 +69,7 @@ def chart(df, sym):
     fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
     return fig
 
-# 🔊 Звук при смене сигнала (сравнивает с localStorage)
+# 🔊 Звук при смене сигнала
 st.markdown("""
 <script>
 (function(){
@@ -91,7 +90,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 🖥️ Интерфейс
-st.markdown(f"🕒 Обновлено: {time.strftime('%H:%M:%S')} | 🔄 Автообновление каждые ~55 сек")
+local_time = datetime.datetime.now().astimezone().strftime("%H:%M:%S")
+st.markdown(f"🕒 Ваше время: `{local_time}` | 🔄 Автопроверка каждые ~55 сек")
+
+# Кнопка ручной проверки
+if st.button("🔍 Проверить сигналы сейчас"):
+    st.rerun()
+
 cols = st.columns(3)
 
 for i, sym in enumerate(SYMBOLS):
@@ -102,15 +107,16 @@ for i, sym in enumerate(SYMBOLS):
             continue
             
         sig_text, sig_class, price = analyze(df)
+        last_candle_time = df["date"].iloc[-1].strftime("%H:%M")
         price_str = f"{price:.5f}" if price else "N/A"
         bg = "#00c853" if sig_class == "call" else "#ff1744" if sig_class == "put" else "#757575"
         
         st.markdown(
             f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
-            f'{sym}<br>{sig_text}<br>{price_str}'
+            f'{sym}<br>{sig_text}<br>{price_str}<br><small style="opacity:0.8">Свеча: {last_candle_time} UTC</small>'
             f'</div>',
             unsafe_allow_html=True
         )
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
-st.caption("🔊 Звук сработает только при смене CALL/PUT. Торгуйте на ДЕМО.")
+st.caption("🔊 Звук только при смене CALL/PUT. Сигналы редкие = качественные. Торгуйте на ДЕМО.")
