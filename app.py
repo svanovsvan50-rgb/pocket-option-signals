@@ -11,13 +11,13 @@ from datetime import datetime
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
-# ⚡ Автообновление каждые 55 секунд
-st_autorefresh(interval=55000, limit=None, key="po_refresh")
-st.title("📊 PO Signals 1m")
+# ⚡ Автообновление каждые 50 секунд
+st_autorefresh(interval=50000, limit=None, key="po_refresh")
+st.title("📊 PO Signals 1m (Активная)")
 
-# ✅ Стабильный индикатор обновления (вместо ненадёжных часов)
+# 🔄 Индикатор обновления
 last_update = datetime.now().strftime("%H:%M:%S")
-st.info(f"🔄 Данные обновлены: {last_update} | Автообновление каждые 55 сек")
+st.info(f"🔄 Данные обновлены: {last_update} | Автопроверка каждые 50 сек")
 
 # 🔑 Ключ
 if 'api_key' not in st.session_state:
@@ -35,15 +35,14 @@ if not st.session_state.api_key:
 api_key = st.session_state.api_key
 
 # 🌐 Часовой пояс
-tz_offset = st.selectbox("🌐 Часовой пояс свечей (совпадает с PO):", 
-                         ["UTC+2", "UTC+3", "UTC+4"], index=0)
+tz_offset = st.selectbox("🌐 Часовой пояс (как в PO):", ["UTC+2", "UTC+3", "UTC+4"], index=0)
 offset_hours = int(tz_offset.split("+")[1])
 
 SYMBOLS = ["EUR/USD", "GBP/USD"]
 
 def get_data(sym, key):
     symbol_encoded = sym.replace("/", "%2F")
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=50&apikey={key}&_={random.randint(1000,9999)}"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval=1min&outputsize=60&apikey={key}&_={random.randint(1000,9999)}"
     try:
         r = requests.get(url, timeout=15)
         data = r.json()
@@ -58,14 +57,19 @@ def get_data(sym, key):
         return None, str(e)
 
 def analyze(df):
-    if len(df) < 25: return "⏳ WAIT", "hold", None
+    if len(df) < 20: return "⏳ WAIT", "hold", None
+    
+    # Более отзывчивые индикаторы для 1m
     df["ema9"] = EMAIndicator(close=df["close"], window=9).ema_indicator()
-    df["ema21"] = EMAIndicator(close=df["close"], window=21).ema_indicator()
-    df["rsi14"] = RSIIndicator(close=df["close"], window=14).rsi()
+    df["rsi9"] = RSIIndicator(close=df["close"], window=9).rsi()
+    
     curr, prev = df.iloc[-1], df.iloc[-2]
-    if curr["rsi14"] < 35 and curr["close"] > curr["ema21"] and curr["ema9"] > prev["ema9"]:
+    prev2 = df.iloc[-3] if len(df) >= 3 else prev
+    
+    # Условия генерации сигнала (оптимизированы под бинарные опционы)
+    if curr["rsi9"] < 30 and curr["close"] > curr["ema9"] and curr["close"] > prev["close"]:
         return "🟢 CALL", "call", curr["close"]
-    elif curr["rsi14"] > 65 and curr["close"] < curr["ema21"] and curr["ema9"] < prev["ema9"]:
+    elif curr["rsi9"] > 70 and curr["close"] < curr["ema9"] and curr["close"] < prev["close"]:
         return "🔴 PUT", "put", curr["close"]
     return "⚪ HOLD", "hold", curr["close"]
 
@@ -73,10 +77,9 @@ def chart(df, sym):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_heights=[0.7, 0.3])
     fig.add_trace(go.Candlestick(x=df["date"], open=df["open"], high=df["high"], low=df["low"], close=df["close"]), row=1, col=1)
     fig.add_trace(go.Scatter(x=df["date"], y=df["ema9"], line=dict(color="orange", width=2), name="EMA9"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["date"], y=df["ema21"], line=dict(color="#00bcd4", width=2), name="EMA21"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["date"], y=df["rsi14"], line=dict(color="purple")), row=2, col=1)
-    fig.add_hline(y=65, line_dash="dash", line_color="red", row=2, col=1)
-    fig.add_hline(y=35, line_dash="dash", line_color="green", row=2, col=1)
+    fig.add_trace(go.Scatter(x=df["date"], y=df["rsi9"], line=dict(color="purple")), row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
     fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=True)
     return fig
 
@@ -101,7 +104,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 🖥️ UI
-if st.button("🔍 Проверить сигналы сейчас"):
+if st.button("🔍 Проверить сейчас"):
     st.rerun()
 
 cols = st.columns(2)
@@ -125,9 +128,10 @@ for i, sym in enumerate(SYMBOLS):
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
 st.caption("""
-📌 **Как торговать:**
-• 🟢 CALL → ВВЕРХ на 1 мин | 🔴 PUT → ВНИЗ на 1 мин | ⚪ HOLD → ждать
-• 🔊 Звук сработает при смене сигнала (включите звук на телефоне)
-• ⚠️ Разница цен с PO на 1-3 пипса — это норма. Сравнивайте НАПРАВЛЕНИЕ, а не цифры.
-• 🎯 Торгуйте только на ДЕМО-счёте минимум 100 сделок перед реальными деньгами.
+📌 **ПРАВИЛА ТОРГОВЛИ С ЭТИМ ИНСТРУМЕНТОМ:**
+1. 🟢 CALL → ВВЕРХ на 1 мин | 🔴 PUT → ВНИЗ на 1 мин | ⚪ HOLD → ждать
+2. 🔊 Звук сработает при смене сигнала. Включите звук на телефоне.
+3. ⚠️ Цены в PO и API всегда отличаются на 1-4 пипса. Это НОРМА. Сравнивайте НАПРАВЛЕНИЕ, а не цифры.
+4. 🎯 Торгуйте ТОЛЬКО в часы Лондона/Нью-Йорка (10:00–18:00 МСК). В остальное время сигналы редкие или ложные.
+5. 📊 Проведите 100 сделок на ДЕМО. Записывайте результат. Только потом думайте о реале.
 """)
