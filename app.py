@@ -6,11 +6,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
-import datetime
 import random
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
+# ⚡ Автообновление каждые 55 секунд
 st_autorefresh(interval=55000, limit=None, key="po_refresh")
 st.title("📊 PO Signals 1m (Синхронизировано)")
 
@@ -39,7 +39,7 @@ def get_data(sym, key):
             return None, data.get("message", "Ошибка API")
         df = pd.DataFrame(data["values"]).iloc[::-1].reset_index(drop=True)
         
-        # 🔑 СИНХРОНИЗАЦИЯ ВРЕМЕНИ: сдвиг UTC → UTC+2 (как в Pocket Option)
+        # 🔑 СИНХРОНИЗАЦИЯ СВЕЧЕЙ: сдвиг UTC → UTC+2 (как в Pocket Option)
         df["date"] = pd.to_datetime(df["datetime"], utc=True) + pd.Timedelta(hours=2)
         
         for c in ["open", "high", "low", "close"]:
@@ -95,9 +95,21 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 🖥️ Интерфейс
-local_time = datetime.datetime.now().astimezone().strftime("%H:%M:%S")
-st.markdown(f"🕒 Ваше время: `{local_time}` | 🌐 Часовой пояс: UTC+2 (как в PO) | 🔄 Автопроверка каждые 55 сек")
+# 🕒 Браузерные часы (всегда точное время вашего устройства)
+st.markdown("""
+<div style="font-size: 1.1em; margin-bottom: 12px; padding: 8px; background: #111; border-radius: 8px;">
+    📱 <b>Ваше время:</b> <span id="local-clock" style="color: #00ffcc; font-family: monospace; font-size: 1.2em;"></span> &nbsp;|&nbsp; 
+    🌐 <b>Свечи:</b> UTC+2 (синхронизировано с PO) &nbsp;|&nbsp; 
+    🔄 <b>Автообновление:</b> 55 сек
+</div>
+<script>
+    function updateClock() {
+        document.getElementById('local-clock').textContent = new Date().toLocaleTimeString();
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+</script>
+""", unsafe_allow_html=True)
 
 if st.button("🔍 Проверить сигналы сейчас"):
     st.rerun()
@@ -131,4 +143,4 @@ st.caption("""
 3. Подождите 5-10 сек (компенсация задержки API)
 4. Откройте сделку ВВЕРХ/ВНИЗ на 1 мин
 5. ⚠️ Торгуйте только в активные сессии (10:00-18:00 МСК)
-""")
+""")  
