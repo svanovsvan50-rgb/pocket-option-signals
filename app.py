@@ -13,7 +13,7 @@ st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", ini
 
 # ⚡ Автообновление каждые 50 секунд
 st_autorefresh(interval=50000, limit=None, key="po_refresh")
-st.title("📊 PO Signals 1m (Активная)")
+st.title("📊 PO Signals 1m")
 
 # 🔄 Индикатор обновления
 last_update = datetime.now().strftime("%H:%M:%S")
@@ -38,7 +38,8 @@ api_key = st.session_state.api_key
 tz_offset = st.selectbox("🌐 Часовой пояс (как в PO):", ["UTC+2", "UTC+3", "UTC+4"], index=0)
 offset_hours = int(tz_offset.split("+")[1])
 
-SYMBOLS = ["EUR/USD", "GBP/USD"]
+# 📊 Добавлены AUD/USD и EUR/CHF
+SYMBOLS = ["EUR/USD", "GBP/USD", "AUD/USD", "EUR/CHF"]
 
 def get_data(sym, key):
     symbol_encoded = sym.replace("/", "%2F")
@@ -59,14 +60,11 @@ def get_data(sym, key):
 def analyze(df):
     if len(df) < 20: return "⏳ WAIT", "hold", None
     
-    # Более отзывчивые индикаторы для 1m
     df["ema9"] = EMAIndicator(close=df["close"], window=9).ema_indicator()
     df["rsi9"] = RSIIndicator(close=df["close"], window=9).rsi()
     
     curr, prev = df.iloc[-1], df.iloc[-2]
-    prev2 = df.iloc[-3] if len(df) >= 3 else prev
     
-    # Условия генерации сигнала (оптимизированы под бинарные опционы)
     if curr["rsi9"] < 30 and curr["close"] > curr["ema9"] and curr["close"] > prev["close"]:
         return "🟢 CALL", "call", curr["close"]
     elif curr["rsi9"] > 70 and curr["close"] < curr["ema9"] and curr["close"] < prev["close"]:
@@ -107,9 +105,12 @@ st.markdown("""
 if st.button("🔍 Проверить сейчас"):
     st.rerun()
 
+# 📱 Адаптивная сетка: 2 колонки на мобильном, 4 на десктопе
+st.markdown("<style>@media (max-width: 768px) { .stColumns { flex-wrap: wrap; } }</style>", unsafe_allow_html=True)
+
 cols = st.columns(2)
 for i, sym in enumerate(SYMBOLS):
-    with cols[i]:
+    with cols[i % 2]:
         df, err = get_data(sym, api_key)
         if err:
             st.error(f"❌ {sym}: {err}")
@@ -128,10 +129,14 @@ for i, sym in enumerate(SYMBOLS):
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
 st.caption("""
-📌 **ПРАВИЛА ТОРГОВЛИ С ЭТИМ ИНСТРУМЕНТОМ:**
-1. 🟢 CALL → ВВЕРХ на 1 мин | 🔴 PUT → ВНИЗ на 1 мин | ⚪ HOLD → ждать
-2. 🔊 Звук сработает при смене сигнала. Включите звук на телефоне.
-3. ⚠️ Цены в PO и API всегда отличаются на 1-4 пипса. Это НОРМА. Сравнивайте НАПРАВЛЕНИЕ, а не цифры.
-4. 🎯 Торгуйте ТОЛЬКО в часы Лондона/Нью-Йорка (10:00–18:00 МСК). В остальное время сигналы редкие или ложные.
-5. 📊 Проведите 100 сделок на ДЕМО. Записывайте результат. Только потом думайте о реале.
+📌 **Пары для торговли:**
+• EUR/USD, GBP/USD — основные, высокая ликвидность
+• AUD/USD — азиатская сессия (03:00–12:00 МСК)
+• EUR/CHF — низкая волатильность, меньше сигналов
+
+🎯 **Правила:**
+1. 🟢 CALL → ВВЕРХ | 🔴 PUT → ВНИЗ | ⚪ HOLD → ждать
+2. 🔊 Звук при смене сигнала
+3. ⚠️ Разница цен с PO на 1-4 пипса — норма
+4. 📊 Торгуйте на ДЕМО минимум 100 сделок
 """)
