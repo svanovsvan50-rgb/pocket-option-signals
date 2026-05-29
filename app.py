@@ -11,8 +11,10 @@ import random
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
+# ⚡ Автообновление каждые 55 секунд
 st_autorefresh(interval=55000, limit=None, key="po_refresh")
-st.title("📊 PO Signals 1m (Адаптировано)")
+
+st.title("📊 PO Signals 1m")
 
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ''
@@ -27,8 +29,7 @@ if not st.session_state.api_key:
     st.stop()
 
 api_key = st.session_state.api_key
-# Только реальные Forex-пары (OTC-пары на PO не совпадают с биржей)
-SYMBOLS = ["EUR/USD", "GBP/USD"]
+SYMBOLS = ["EUR/USD", "GBP/USD", "USD/RUB"]
 
 def get_data(sym, key):
     symbol_encoded = sym.replace("/", "%2F")
@@ -47,31 +48,25 @@ def get_data(sym, key):
         return None, str(e)
 
 def analyze(df):
-    if len(df) < 25:
+    if len(df) < 20:
         return "⏳ WAIT", "hold", None
-    
     df["ema9"] = EMAIndicator(close=df["close"], window=9).ema_indicator()
-    df["ema21"] = EMAIndicator(close=df["close"], window=21).ema_indicator()
     df["rsi14"] = RSIIndicator(close=df["close"], window=14).rsi()
-    
     curr, prev = df.iloc[-1], df.iloc[-2]
-    
-    # Более чувствительные, но с фильтром тренда
-    if curr["rsi14"] < 35 and curr["close"] > curr["ema21"] and curr["ema9"] > prev["ema9"]:
+    if curr["ema9"] > prev["ema9"] and curr["rsi14"] < 30:
         return "🟢 CALL", "call", curr["close"]
-    elif curr["rsi14"] > 65 and curr["close"] < curr["ema21"] and curr["ema9"] < prev["ema9"]:
+    elif curr["ema9"] < prev["ema9"] and curr["rsi14"] > 70:
         return "🔴 PUT", "put", curr["close"]
     return "⚪ HOLD", "hold", curr["close"]
 
 def chart(df, sym):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_heights=[0.7, 0.3])
     fig.add_trace(go.Candlestick(x=df["date"], open=df["open"], high=df["high"], low=df["low"], close=df["close"]), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["date"], y=df["ema9"], line=dict(color="orange", width=2), name="EMA9"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["date"], y=df["ema21"], line=dict(color="#00bcd4", width=2), name="EMA21"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df["date"], y=df["ema9"], line=dict(color="orange", width=2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df["date"], y=df["rsi14"], line=dict(color="purple")), row=2, col=1)
-    fig.add_hline(y=65, line_dash="dash", line_color="red", row=2, col=1)
-    fig.add_hline(y=35, line_dash="dash", line_color="green", row=2, col=1)
-    fig.update_layout(height=420, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=True)
+    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+    fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
     return fig
 
 # 🔊 Звук при смене сигнала
@@ -96,12 +91,13 @@ st.markdown("""
 
 # 🖥️ Интерфейс
 local_time = datetime.datetime.now().astimezone().strftime("%H:%M:%S")
-st.markdown(f"🕒 Ваше время: `{local_time}` | ⏱️ API задержка: ~15 сек | 🔄 Автопроверка каждые 55 сек")
+st.markdown(f"🕒 Ваше время: `{local_time}` | 🔄 Автопроверка каждые ~55 сек")
 
+# Кнопка ручной проверки
 if st.button("🔍 Проверить сигналы сейчас"):
     st.rerun()
 
-cols = st.columns(2)
+cols = st.columns(3)
 
 for i, sym in enumerate(SYMBOLS):
     with cols[i]:
@@ -117,17 +113,10 @@ for i, sym in enumerate(SYMBOLS):
         
         st.markdown(
             f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
-            f'{sym}<br>{sig_text}<br>{price_str}<br><small style="opacity:0.8">Свеча закрыта в: {last_candle_time} UTC</small>'
+            f'{sym}<br>{sig_text}<br>{price_str}<br><small style="opacity:0.8">Свеча: {last_candle_time} UTC</small>'
             f'</div>',
             unsafe_allow_html=True
         )
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
-st.caption("""
-📌 **Как торговать с задержкой API:**
-1. Дождитесь 🟢/🔴 и звука
-2. Откройте PO → выберите ту же пару
-3. Подождите 5-10 сек (компенсация задержки)
-4. Откройте сделку ВВЕРХ/ВНИЗ на 1 мин
-5. ⚠️ Не используйте OTC-пары. Торгуйте в сессии Лондон/Нью-Йорк.
-""")
+st.caption("🔊 Звук только при смене CALL/PUT. Сигналы редкие = качественные. Торгуйте на ДЕМО.")
