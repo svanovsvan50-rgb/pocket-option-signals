@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
 import random
+from datetime import datetime
 
 st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
@@ -14,27 +15,11 @@ st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", ini
 st_autorefresh(interval=55000, limit=None, key="po_refresh")
 st.title("📊 PO Signals 1m")
 
-# 🕐 Стабильные браузерные часы
-st.markdown("""
-<div style="padding:12px; background:#222; border-radius:10px; margin-bottom:15px; border:1px solid #444;">
-    📱 <b>Ваше время:</b> <span id="po-clock" style="color:#00ffcc; font-family:monospace; font-size:1.3em;">--:--:--</span> &nbsp;|&nbsp; 
-    🔄 Автопроверка каждые 55 сек
-</div>
-<script>
-(function() {
-    function runClock() {
-        const el = document.getElementById('po-clock');
-        if (!el) { setTimeout(runClock, 500); return; }
-        function tick() { el.textContent = new Date().toLocaleTimeString(); }
-        tick();
-        setInterval(tick, 1000);
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', runClock);
-    else runClock();
-})();
-</script>
-""", unsafe_allow_html=True)
+# ✅ Стабильный индикатор обновления (вместо ненадёжных часов)
+last_update = datetime.now().strftime("%H:%M:%S")
+st.info(f"🔄 Данные обновлены: {last_update} | Автообновление каждые 55 сек")
 
+# 🔑 Ключ
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ''
 
@@ -49,9 +34,9 @@ if not st.session_state.api_key:
 
 api_key = st.session_state.api_key
 
-# 🌐 Выбор часового пояса (совпадает с настройками PO)
-tz_offset = st.selectbox("🌐 Часовой пояс свечей (как в Pocket Option):", 
-                         ["UTC+2", "UTC+3", "UTC+4", "UTC+5"], index=0)
+# 🌐 Часовой пояс
+tz_offset = st.selectbox("🌐 Часовой пояс свечей (совпадает с PO):", 
+                         ["UTC+2", "UTC+3", "UTC+4"], index=0)
 offset_hours = int(tz_offset.split("+")[1])
 
 SYMBOLS = ["EUR/USD", "GBP/USD"]
@@ -65,10 +50,7 @@ def get_data(sym, key):
         if "values" not in data:
             return None, data.get("message", "Ошибка API")
         df = pd.DataFrame(data["values"]).iloc[::-1].reset_index(drop=True)
-        
-        # 🔑 Динамический сдвиг времени под ваш выбор
         df["date"] = pd.to_datetime(df["datetime"], utc=True) + pd.Timedelta(hours=offset_hours)
-        
         for c in ["open", "high", "low", "close"]:
             df[c] = pd.to_numeric(df[c], errors="coerce")
         return df, None
@@ -76,15 +58,11 @@ def get_data(sym, key):
         return None, str(e)
 
 def analyze(df):
-    if len(df) < 25:
-        return "⏳ WAIT", "hold", None
-    
+    if len(df) < 25: return "⏳ WAIT", "hold", None
     df["ema9"] = EMAIndicator(close=df["close"], window=9).ema_indicator()
     df["ema21"] = EMAIndicator(close=df["close"], window=21).ema_indicator()
     df["rsi14"] = RSIIndicator(close=df["close"], window=14).rsi()
-    
     curr, prev = df.iloc[-1], df.iloc[-2]
-    
     if curr["rsi14"] < 35 and curr["close"] > curr["ema21"] and curr["ema9"] > prev["ema9"]:
         return "🟢 CALL", "call", curr["close"]
     elif curr["rsi14"] > 65 and curr["close"] < curr["ema21"] and curr["ema9"] < prev["ema9"]:
@@ -99,42 +77,40 @@ def chart(df, sym):
     fig.add_trace(go.Scatter(x=df["date"], y=df["rsi14"], line=dict(color="purple")), row=2, col=1)
     fig.add_hline(y=65, line_dash="dash", line_color="red", row=2, col=1)
     fig.add_hline(y=35, line_dash="dash", line_color="green", row=2, col=1)
-    fig.update_layout(height=420, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=True)
+    fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=True)
     return fig
 
 # 🔊 Звук при смене сигнала
 st.markdown("""
 <script>
 (function(){
-    let last = JSON.parse(localStorage.getItem('po_sigs') || '{}');
-    let changed = false;
-    document.querySelectorAll('[data-sig]').forEach(el => {
-        let s = el.dataset.sym, v = el.dataset.sig;
-        if(last[s] && last[s] !== v && v !== 'HOLD') changed = true;
-        last[s] = v;
-    });
-    if(changed){
-        let snd = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
-        snd.volume = 0.5; snd.play().catch(()=>{});
-    }
-    localStorage.setItem('po_sigs', JSON.stringify(last));
+  let last = JSON.parse(localStorage.getItem('po_sigs') || '{}');
+  let changed = false;
+  document.querySelectorAll('[data-sig]').forEach(el => {
+    let s = el.dataset.sym, v = el.dataset.sig;
+    if(last[s] && last[s] !== v && v !== 'HOLD') changed = true;
+    last[s] = v;
+  });
+  if(changed){
+    let snd = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+    snd.volume = 0.5; snd.play().catch(()=>{});
+  }
+  localStorage.setItem('po_sigs', JSON.stringify(last));
 })();
 </script>
 """, unsafe_allow_html=True)
 
-# 🖥️ Интерфейс
+# 🖥️ UI
 if st.button("🔍 Проверить сигналы сейчас"):
     st.rerun()
 
 cols = st.columns(2)
-
 for i, sym in enumerate(SYMBOLS):
     with cols[i]:
         df, err = get_data(sym, api_key)
         if err:
             st.error(f"❌ {sym}: {err}")
             continue
-            
         sig_text, sig_class, price = analyze(df)
         last_candle_time = df["date"].iloc[-1].strftime("%H:%M")
         price_str = f"{price:.5f}" if price else "N/A"
@@ -142,16 +118,16 @@ for i, sym in enumerate(SYMBOLS):
         
         st.markdown(
             f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
-            f'{sym}<br>{sig_text}<br>{price_str}<br><small style="opacity:0.8">Свеча закрыта в: {last_candle_time}</small>'
+            f'{sym}<br>{sig_text}<br>{price_str}<br><small style="opacity:0.8">Свеча: {last_candle_time}</small>'
             f'</div>',
             unsafe_allow_html=True
         )
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
 st.caption("""
-📌 **Как точно совместить с Pocket Option:**
-1. Выберите в списке выше тот же часовой пояс, что в настройках PO
-2. Сравнивайте **ЗАКРЫТЫЕ** свечи (не текущую формирующуюся)
-3. Цены могут отличаться на 1-3 пункта из-за разных поставщиков ликвидности → это нормально
-4. Важно совпадение НАПРАВЛЕНИЯ и структуры свечей, а не точных цифр
+📌 **Как торговать:**
+• 🟢 CALL → ВВЕРХ на 1 мин | 🔴 PUT → ВНИЗ на 1 мин | ⚪ HOLD → ждать
+• 🔊 Звук сработает при смене сигнала (включите звук на телефоне)
+• ⚠️ Разница цен с PO на 1-3 пипса — это норма. Сравнивайте НАПРАВЛЕНИЕ, а не цифры.
+• 🎯 Торгуйте только на ДЕМО-счёте минимум 100 сделок перед реальными деньгами.
 """)
