@@ -12,7 +12,28 @@ st.set_page_config(page_title="PO Signals", page_icon="📊", layout="wide", ini
 
 # ⚡ Автообновление каждые 55 секунд
 st_autorefresh(interval=55000, limit=None, key="po_refresh")
-st.title("📊 PO Signals 1m (Синхронизировано)")
+st.title("📊 PO Signals 1m")
+
+# 🕐 Стабильные браузерные часы
+st.markdown("""
+<div style="padding:12px; background:#222; border-radius:10px; margin-bottom:15px; border:1px solid #444;">
+    📱 <b>Ваше время:</b> <span id="po-clock" style="color:#00ffcc; font-family:monospace; font-size:1.3em;">--:--:--</span> &nbsp;|&nbsp; 
+    🔄 Автопроверка каждые 55 сек
+</div>
+<script>
+(function() {
+    function runClock() {
+        const el = document.getElementById('po-clock');
+        if (!el) { setTimeout(runClock, 500); return; }
+        function tick() { el.textContent = new Date().toLocaleTimeString(); }
+        tick();
+        setInterval(tick, 1000);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', runClock);
+    else runClock();
+})();
+</script>
+""", unsafe_allow_html=True)
 
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ''
@@ -23,10 +44,16 @@ if new_key and new_key != st.session_state.api_key:
     st.rerun()
 
 if not st.session_state.api_key:
-    st.info("💡 Введите ключ → нажмите Enter. Chrome предложит сохранить его.")
+    st.info("💡 Введите ключ → нажмите Enter.")
     st.stop()
 
 api_key = st.session_state.api_key
+
+# 🌐 Выбор часового пояса (совпадает с настройками PO)
+tz_offset = st.selectbox("🌐 Часовой пояс свечей (как в Pocket Option):", 
+                         ["UTC+2", "UTC+3", "UTC+4", "UTC+5"], index=0)
+offset_hours = int(tz_offset.split("+")[1])
+
 SYMBOLS = ["EUR/USD", "GBP/USD"]
 
 def get_data(sym, key):
@@ -39,8 +66,8 @@ def get_data(sym, key):
             return None, data.get("message", "Ошибка API")
         df = pd.DataFrame(data["values"]).iloc[::-1].reset_index(drop=True)
         
-        # 🔑 СИНХРОНИЗАЦИЯ СВЕЧЕЙ: сдвиг UTC → UTC+2 (как в Pocket Option)
-        df["date"] = pd.to_datetime(df["datetime"], utc=True) + pd.Timedelta(hours=2)
+        # 🔑 Динамический сдвиг времени под ваш выбор
+        df["date"] = pd.to_datetime(df["datetime"], utc=True) + pd.Timedelta(hours=offset_hours)
         
         for c in ["open", "high", "low", "close"]:
             df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -95,22 +122,7 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 🕒 Браузерные часы (всегда точное время вашего устройства)
-st.markdown("""
-<div style="font-size: 1.1em; margin-bottom: 12px; padding: 8px; background: #111; border-radius: 8px;">
-    📱 <b>Ваше время:</b> <span id="local-clock" style="color: #00ffcc; font-family: monospace; font-size: 1.2em;"></span> &nbsp;|&nbsp; 
-    🌐 <b>Свечи:</b> UTC+2 (синхронизировано с PO) &nbsp;|&nbsp; 
-    🔄 <b>Автообновление:</b> 55 сек
-</div>
-<script>
-    function updateClock() {
-        document.getElementById('local-clock').textContent = new Date().toLocaleTimeString();
-    }
-    updateClock();
-    setInterval(updateClock, 1000);
-</script>
-""", unsafe_allow_html=True)
-
+# 🖥️ Интерфейс
 if st.button("🔍 Проверить сигналы сейчас"):
     st.rerun()
 
@@ -137,10 +149,9 @@ for i, sym in enumerate(SYMBOLS):
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
 st.caption("""
-📌 **Как торговать:**
-1. Дождитесь 🟢/🔴 + звука
-2. Откройте PO → EUR/USD или GBP/USD
-3. Подождите 5-10 сек (компенсация задержки API)
-4. Откройте сделку ВВЕРХ/ВНИЗ на 1 мин
-5. ⚠️ Торгуйте только в активные сессии (10:00-18:00 МСК)
-""")  
+📌 **Как точно совместить с Pocket Option:**
+1. Выберите в списке выше тот же часовой пояс, что в настройках PO
+2. Сравнивайте **ЗАКРЫТЫЕ** свечи (не текущую формирующуюся)
+3. Цены могут отличаться на 1-3 пункта из-за разных поставщиков ликвидности → это нормально
+4. Важно совпадение НАПРАВЛЕНИЯ и структуры свечей, а не точных цифр
+""")
