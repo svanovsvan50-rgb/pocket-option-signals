@@ -16,8 +16,8 @@ st_autorefresh(interval=50000, limit=None, key="po_refresh")
 st.title("📊 PO Signals 1m")
 
 # 🔄 Индикатор обновления
-last_update = datetime.now().strftime("%H:%M:%S")
-st.info(f"🔄 Данные обновлены: {last_update} | Автопроверка каждые 50 сек")
+current_time = datetime.now().strftime("%H:%M:%S")
+st.info(f"🔄 Данные обновлены: {current_time} | Автопроверка каждые 50 сек")
 
 # 🔑 Ключ
 if 'api_key' not in st.session_state:
