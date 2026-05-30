@@ -11,13 +11,12 @@ from datetime import datetime
 
 st.set_page_config(page_title="PO Signals", page_icon="🎯", layout="wide", initial_sidebar_state="collapsed")
 
-# ⚡ Автообновление каждые 45 секунд (чаще = больше шансов)
+# ⚡ Автообновление каждые 45 секунд
 st_autorefresh(interval=45000, limit=None, key="po_refresh")
-st.title("🎯 PO Signals 1m (Активные)")
+st.title("🎯 PO Signals 1m")
 
-# 🔄 Индикатор обновления
-last_update = datetime.now().strftime("%H:%M:%S")
-st.info(f"🔄 Обновлено: {last_update} | Проверка каждые 45 сек")
+# 🕐 Синхронизация времени (UTC)
+st.info("⏰ Время на графике: UTC. Чтобы совпало с PO: в терминале нажмите ⚙️ → Время сервера → UTC")
 
 # 🔑 Ключ
 if 'api_key' not in st.session_state:
@@ -33,9 +32,6 @@ if not st.session_state.api_key:
     st.stop()
 
 api_key = st.session_state.api_key
-tz_offset = st.selectbox("🌐 Часовой пояс:", ["UTC+2", "UTC+3", "UTC+4"], index=0)
-offset_hours = int(tz_offset.split("+")[1])
-
 SYMBOLS = ["EUR/USD", "GBP/USD", "AUD/USD", "EUR/CHF"]
 
 def get_data(sym, key):
@@ -47,7 +43,8 @@ def get_data(sym, key):
         if "values" not in data:
             return None, data.get("message", "Ошибка")
         df = pd.DataFrame(data["values"]).iloc[::-1].reset_index(drop=True)
-        df["date"] = pd.to_datetime(df["datetime"], utc=True) + pd.Timedelta(hours=offset_hours)
+        # 🌍 Фиксируем UTC без ручных сдвигов
+        df["date"] = pd.to_datetime(df["datetime"], utc=True)
         for c in ["open", "high", "low", "close"]:
             df[c] = pd.to_numeric(df[c], errors="coerce")
         return df, None
@@ -55,38 +52,25 @@ def get_data(sym, key):
         return None, str(e)
 
 def analyze(df):
-    """Генерирует сигналы с оценкой надёжности"""
-    if len(df) < 15:
-        return "⏳", "hold", None, 0
-    
+    if len(df) < 15: return "⏳", "hold", None, 0
     df["ema9"] = EMAIndicator(close=df["close"], window=9).ema_indicator()
     df["rsi9"] = RSIIndicator(close=df["close"], window=9).rsi()
+    curr, prev = df.iloc[-1], df.iloc[-2]
     
-    curr = df.iloc[-1]
-    prev = df.iloc[-2]
-    
-    # 🎯 Рассчитываем "силу сигнала" (0-100)
     rsi_score = 0
-    if curr["rsi9"] < 35:
-        rsi_score = max(0, 100 - (curr["rsi9"] * 2.8))  # Чем ниже RSI, тем выше балл
-    elif curr["rsi9"] > 65:
-        rsi_score = max(0, (curr["rsi9"] - 65) * 2.8)   # Чем выше RSI, тем выше балл
-    
+    if curr["rsi9"] < 40: rsi_score = max(0, 100 - (curr["rsi9"] * 2.5))
+    elif curr["rsi9"] > 60: rsi_score = max(0, (curr["rsi9"] - 60) * 2.5)
     ema_score = 50 if (curr["close"] > curr["ema9"]) == (prev["close"] > prev["ema9"]) else 30
-    momentum_score = 70 if (curr["close"] - prev["close"]) * (curr["ema9"] - prev["ema9"]) > 0 else 30
+    mom_score = 70 if (curr["close"] - prev["close"]) * (curr["ema9"] - prev["ema9"]) > 0 else 30
+    total_score = int((rsi_score * 0.5) + (ema_score * 0.3) + (mom_score * 0.2))
     
-    total_score = int((rsi_score * 0.5) + (ema_score * 0.3) + (momentum_score * 0.2))
-    
-    # 🟢🔴 Сигналы при более мягких условиях
     if curr["rsi9"] < 40 and curr["close"] > curr["ema9"]:
         return "🟢 CALL", "call", curr["close"], total_score
     elif curr["rsi9"] > 60 and curr["close"] < curr["ema9"]:
         return "🔴 PUT", "put", curr["close"], total_score
-    # ⚪ Слабый сигнал при пограничных значениях
     elif 35 <= curr["rsi9"] <= 45 or 55 <= curr["rsi9"] <= 65:
         direction = "🟡 WATCH" if curr["rsi9"] < 50 else "🟠 WATCH"
         return direction, "watch", curr["close"], total_score
-    
     return "⚪ HOLD", "hold", curr["close"], total_score
 
 def chart(df, sym):
@@ -96,7 +80,7 @@ def chart(df, sym):
     fig.add_trace(go.Scatter(x=df["date"], y=df["rsi9"], line=dict(color="purple")), row=2, col=1)
     fig.add_hline(y=60, line_dash="dash", line_color="#ff9800", row=2, col=1)
     fig.add_hline(y=40, line_dash="dash", line_color="#ff9800", row=2, col=1)
-    fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False)
+    fig.update_layout(height=400, margin=dict(l=25,r=25,t=25,b=25), template="plotly_dark", showlegend=False, xaxis=dict(tickformat="%H:%M"))
     return fig
 
 # 🔊 Звук
@@ -131,18 +115,13 @@ for i, sym in enumerate(SYMBOLS):
             st.error(f"❌ {sym}: {err}")
             continue
         sig_text, sig_class, price, score = analyze(df)
-        last_candle_time = df["date"].iloc[-1].strftime("%H:%M")
+        last_candle_time = df["date"].iloc[-1].strftime("%H:%M UTC")
         price_str = f"{price:.5f}" if price else "N/A"
         
-        # Цвета по надёжности
-        if sig_class == "call":
-            bg = "#00c853" if score >= 60 else "#4caf50"
-        elif sig_class == "put":
-            bg = "#ff1744" if score >= 60 else "#f44336"
-        elif sig_class == "watch":
-            bg = "#ff9800"
-        else:
-            bg = "#757575"
+        if sig_class == "call": bg = "#00c853" if score >= 60 else "#4caf50"
+        elif sig_class == "put": bg = "#ff1744" if score >= 60 else "#f44336"
+        elif sig_class == "watch": bg = "#ff9800"
+        else: bg = "#757575"
         
         st.markdown(
             f'<div style="padding:15px;border-radius:10px;text-align:center;font-weight:bold;background:{bg};color:white;margin:5px 0;" data-sym="{sym}" data-sig="{sig_class}">'
@@ -153,15 +132,9 @@ for i, sym in enumerate(SYMBOLS):
         st.plotly_chart(chart(df, sym), use_container_width=True)
 
 st.caption("""
-📌 **Как читать сигналы:**
-• 🟢/🔴 + надёжность ≥60% → высокий приоритет входа
-• 🟡/🟠 + надёжность 40-59% → можно войти с уменьшенной ставкой
-• ⚪ → ждать, рынок в шуме
-
-🎯 **Правила:**
-1. Вход через 3-5 сек после сигнала (компенсация задержки API)
-2. Экспирация: 1 минута
-3. Риск: ≤1% депозита на сделку
-4. Торгуйте в сессии Лондон/Нью-Йорк (10:00-18:00 МСК)
-5. Ведите журнал: 100 сделок на демо перед реалом
+📌 **Как синхронизировать время с Pocket Option:**
+1. Откройте PO → нажмите ⚙️ (Настройки графика)
+2. Найдите "Время сервера" или "Timezone"
+3. Выберите `UTC` → сохраните
+4. Графики совпадут на 100%. Сигналы работают независимо от отображаемого времени.
 """)
